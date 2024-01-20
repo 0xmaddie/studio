@@ -1,0 +1,38 @@
+[project]
+name = "studio"
+version = "1.0.0"
+authors = [
+  { name="Madison Brooks", email="maddie@0xmaddie.page" },
+]
+description = "studio"
+readme = "readme.md"
+requires-python = ">=3.10"
+dependencies = [
+  # "pycairo",
+  "cairocffi",
+  "numpy",
+  "IPython",
+  "tqdm",
+  # "jax",
+  "Pillow",
+  "requests",
+  # "scipy",
+  # "opensimplex",
+  "loguru",
+  # "sentencepiece",
+  # "accelerate",
+  # "bitsandbytes",
+  # "ftfy",
+  # "playwright",
+  # "transformers @ git+https://github.com/huggingface/transformers",
+  # "diffusers @ git+https://github.com/huggingface/diffusers",
+  # "transformers",
+  # "diffusers",
+  # "open_clip_torch",
+  # "open-flamingo",
+  # "openai",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

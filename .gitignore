@@ -1,0 +1,15 @@
+*~
+*#*
+.*~
+.*#*
+.venv/
+studio/build
+studio/studio.egg-info
+*.jpg
+*.jpeg
+*.png
+*.gif
+!bin/*.jpg
+!bin/*.jpeg
+!bin/*.png
+!bin/*.gif
