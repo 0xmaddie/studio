@@ -5,7 +5,7 @@ import numpy
 import cairocffi as cairo
 import studio.media
 
-def draw() -> PIL.Image.Image:
+def fire_blast() -> PIL.Image.Image:
   def hex_to_rgb(hex_color):
     r = int(hex_color[1:3], 16) / 255.0
     g = int(hex_color[3:5], 16) / 255.0
@@ -61,7 +61,7 @@ def draw() -> PIL.Image.Image:
   return studio.media.pil_from_cairo(surface)
 
 if __name__ == '__main__':
-  image = draw()
+  image = fire_blast()
   filename = f'{int(time.time())}.png'
   image.save(filename)
   print(filename)
