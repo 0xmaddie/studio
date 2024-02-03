@@ -13,3 +13,4 @@ studio/studio.egg-info
 !bin/*.jpeg
 !bin/*.png
 !bin/*.gif
+__pycache__
