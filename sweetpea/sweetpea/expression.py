@@ -4,7 +4,7 @@ import dataclasses
 
 from typing import Optional
 
-class Object:
+class Expression:
   def assert_identity(self):
     raise WrongTag(expected='identity', actual=self)
 
@@ -20,26 +20,77 @@ class Object:
   def assert_catenate(self):
     raise WrongTag(expected='catenate', actual=self)
 
-  def quote(self) -> 'Object':
+  def quote(self) -> 'Expression':
     return Quote(self)
 
-  def seq(self, rhs: 'Object') -> 'Object':
+  def seq(self, rhs: 'Expression') -> 'Expression':
     if isinstance(rhs, Identity):
       return self
     return Catenate(self, rhs)
+
+  @staticmethod
+  def normalize(expr: 'Expression') -> 'Expression':
+    state = State(expr)
+    while state.has_next:
+      state.step()
+    return state.value
+
+  @staticmethod
+  def from_array(xs: list['Expression']) -> 'Expression':
+    state = Identity()
+    for child in reversed(xs):
+      state = child.seq(state)
+    return state
+
+  @staticmethod
+  def from_string(string: str) -> 'Expression':
+    stack = []
+    build = []
+    tokens = string
+    tokens = tokens.replace('\t', ' ')
+    tokens = tokens.replace('\r', ' ')
+    tokens = tokens.replace('\n', ' ')
+    tokens = tokens.replace('[', '[ ')
+    tokens = tokens.replace(']', ' ]')
+    tokens = tokens.split(' ')
+    for token in tokens:
+      if token == '[':
+        stack.append(build)
+        build = []
+      elif token == ']':
+        if len(stack) == 0:
+          raise UnbalancedBrackets(source=string)
+        value = Expression.from_array(build).quote()
+        build = stack.pop()
+        build.append(value)
+      elif token in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']:
+        value = Constant(token)
+        build.append(value)
+      elif re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', token):
+        value = Variable(token)
+        build.append(value)
+      elif re.match(r'^@[a-zA-Z_][a-zA-Z0-9_]*$', token):
+        value = Annotate(token)
+        build.append(value)
+      elif len(token) == 0:
+        continue
+      else:
+        raise UnknownToken(source=string, token=token)
+    return Expression.from_array(build)
+
 
 class Error(Exception):
   pass
 
 class WrongTag(Error):
   expected: str
-  actual: Object
+  actual: Expression
   state: Optional['State']
 
   def __init__(
     self,
     expected: str,
-    actual: Object,
+    actual: Expression,
     state: Optional['State'] = None,
   ):
     self.expected = expected
@@ -102,18 +153,18 @@ No more data
 '''.strip()
 
 @dataclasses.dataclass(frozen=True)
-class Identity(Object):
+class Identity(Expression):
   def assert_identity(self):
     pass
 
-  def seq(self, rhs: Object) -> Object:
+  def seq(self, rhs: Expression) -> Expression:
     return rhs
 
   def __str__(self) -> str:
     return ''
 
 @dataclasses.dataclass(frozen=True)
-class Constant(Object):
+class Constant(Expression):
   name: str
 
   def assert_constant(self):
@@ -123,7 +174,7 @@ class Constant(Object):
     return self.name
 
 @dataclasses.dataclass(frozen=True)
-class Variable(Object):
+class Variable(Expression):
   name: str
 
   def assert_variable(self):
@@ -133,7 +184,7 @@ class Variable(Object):
     return self.name
 
 @dataclasses.dataclass(frozen=True)
-class Annotate(Object):
+class Annotate(Expression):
   name: str
 
   def assert_annotate(self):
@@ -143,8 +194,8 @@ class Annotate(Object):
     return self.name
 
 @dataclasses.dataclass(frozen=True)
-class Quote(Object):
-  body: Object
+class Quote(Expression):
+  body: Expression
 
   def assert_quote(self):
     pass
@@ -153,14 +204,14 @@ class Quote(Object):
     return f'[{self.body}]'
 
 @dataclasses.dataclass(frozen=True)
-class Catenate(Object):
-  fst: Object
-  snd: Object
+class Catenate(Expression):
+  fst: Expression
+  snd: Expression
 
   def assert_catenate(self):
     pass
 
-  def seq(self, rhs: Object) -> Object:
+  def seq(self, rhs: Expression) -> Expression:
     if isinstance(rhs, Identity):
       return self
     if isinstance(rhs, Catenate):
@@ -172,173 +223,112 @@ class Catenate(Object):
     return f'{self.fst} {self.snd}'
 
 class State:
-  code: list[Object]
-  data: list[Object]
-  sink: list[Object]
+  code: list[Expression]
+  data: list[Expression]
+  sink: list[Expression]
 
-  def __init__(self, init: Object):
+  def __init__(self, init: Expression):
     self.code = [init]
     self.data = []
     self.sink = []
 
   @property
-  def value(self) -> Object:
+  def value(self) -> Expression:
     hidden = self.sink+self.data+list(reversed(self.code))
-    return from_array(hidden)
+    return Expression.from_array(hidden)
 
   @property
   def has_next(self) -> bool:
     return len(self.code) > 0
 
-  def next(self) -> Object:
+  def next(self) -> Expression:
     if len(self.code) == 0:
       raise NoMoreCode(self)
     result = self.code.pop()
     return result
 
-  def send(self, obj: Object):
-    self.code.append(obj)
+  def send(self, expr: Expression):
+    self.code.append(expr)
 
-  def push(self, obj: Object):
-    self.data.append(obj)
+  def push(self, expr: Expression):
+    self.data.append(expr)
 
-  def pop(self) -> Object:
+  def pop(self) -> Expression:
     if len(self.data) == 0:
       raise NoMoreData(self)
     result = self.data.pop()
     return result
 
-  def peek(self, index: int = 0) -> Object:
+  def peek(self, index: int = 0) -> Expression:
     if index >= len(self.data):
       raise NoMoreData(self)
     result = self.data[-1-index]
     return result
 
-  def thunk_with(self, point: Object):
+  def thunk_with(self, point: Expression):
     self.sink.extend(self.data)
     self.data = []
     self.sink.append(point)
 
-class Container:
-  state: State
-
-  def __init__(self, init: Object):
-    self.state = State(init)
-
-  @property
-  def value(self) -> Object:
-    return self.state.value
-
-  @property
-  def is_done(self) -> bool:
-    return not self.state.has_next
-
   def step(self):
-    point = self.state.next()
+    point = self.next()
     match point:
       case Identity():
         pass
       case Catenate(fst, snd):
-        self.state.send(snd)
-        self.state.send(fst)
+        self.send(snd)
+        self.send(fst)
       case Quote(_):
-        self.state.push(point)
+        self.push(point)
       case Variable(name):
-        self.state.thunk_with(point)
+        self.thunk_with(point)
       case Annotate(name):
         pass
       case Constant(name):
         try:
           self._exec(point)
         except Error:
-          self.state.thunk_with(point)
+          self.thunk_with(point)
 
   def _exec(self, inst: Constant):
     match inst.name:
       case 'a':
-        value = self.state.peek(0)
+        value = self.peek(0)
         value.assert_quote()
-        self.state.pop()
-        self.state.send(value.body)
+        self.pop()
+        self.send(value.body)
       case 'b':
-        value = self.state.peek(0)
-        self.state.pop()
+        value = self.peek(0)
+        self.pop()
         result = value.quote()
-        self.state.push(result)
+        self.push(result)
       case 'c':
-        snd = self.state.peek(0)
+        snd = self.peek(0)
         snd.assert_quote()
-        fst = self.state.peek(1)
+        fst = self.peek(1)
         fst.assert_quote()
-        self.state.pop()
-        self.state.pop()
+        self.pop()
+        self.pop()
         body = fst.body.seq(snd.body)
         result = body.quote()
-        self.state.push(result)
+        self.push(result)
       case 'd':
-        value = self.state.peek(0)
-        self.state.push(value)
+        value = self.peek(0)
+        self.push(value)
       case 'e':
-        value = self.state.peek(0)
-        self.state.pop()
+        value = self.peek(0)
+        self.pop()
       case 'f':
-        fst = self.state.peek(0)
-        snd = self.state.peek(1)
-        self.state.pop()
-        self.state.pop()
-        self.state.push(fst)
-        self.state.push(snd)
+        fst = self.peek(0)
+        snd = self.peek(1)
+        self.pop()
+        self.pop()
+        self.push(fst)
+        self.push(snd)
       case 'g':
         pass
       case 'h':
         pass
-
-def normalize(obj: Object) -> Object:
-  container = Container(obj)
-  while not container.is_done:
-    container.step()
-  return container.value
-
-def from_array(xs: list[Object]) -> Object:
-  state = Identity()
-  for child in reversed(xs):
-    state = child.seq(state)
-  return state
-
-def from_string(string: str) -> Object:
-  stack = []
-  build = []
-  tokens = string
-  tokens = tokens.replace('\t', ' ')
-  tokens = tokens.replace('\r', ' ')
-  tokens = tokens.replace('\n', ' ')
-  tokens = tokens.replace('[', '[ ')
-  tokens = tokens.replace(']', ' ]')
-  tokens = tokens.split(' ')
-  for token in tokens:
-    if token == '[':
-      stack.append(build)
-      build = []
-    elif token == ']':
-      if len(stack) == 0:
-        raise UnbalancedBrackets(source=string)
-      value = from_array(build).quote()
-      build = stack.pop()
-      build.append(value)
-    elif token in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']:
-      value = Constant(token)
-      build.append(value)
-    elif re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', token):
-      value = Variable(token)
-      build.append(value)
-    elif re.match(r'^@[a-zA-Z_][a-zA-Z0-9_]*$', token):
-      value = Annotate(token)
-      build.append(value)
-    elif len(token) == 0:
-      continue
-    else:
-      raise UnknownToken(source=string, token=token)
-  return from_array(build)
 
 class TestBasic(unittest.TestCase):
   def test_axioms(self):
@@ -351,9 +341,9 @@ class TestBasic(unittest.TestCase):
       ('[foo] [bar] f', '[bar] [foo]'),
     ]
     for (source, expected_source) in axioms:
-      expected = from_string(expected_source)
-      value = from_string(source)
-      actual = normalize(value)
+      expected = Expression.from_string(expected_source)
+      value = Expression.from_string(source)
+      actual = Expression.normalize(value)
       actual_source = f'{actual}'
       self.assertEqual(expected, actual)
       self.assertEqual(expected_source, actual_source)
